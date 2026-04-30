@@ -1,0 +1,26 @@
+# Virtual environment
+venv/
+
+# Extracted media (large, reproducible)
+data/extracted/
+data/output/
+
+# Downloaded video (too large for git)
+data/input/
+
+# PANNs checkpoint (300MB, download separately)
+models/panns/*.pth
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
