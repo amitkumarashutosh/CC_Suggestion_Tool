@@ -1,0 +1,323 @@
+# =============================================================================
+# CC Suggestion Tool — Master Configuration
+# =============================================================================
+# All pipeline parameters in one place.
+# Edit this file to tune the system. No Python code changes needed.
+#
+# Parameter guide:
+#   Thresholds range from 0.0 (accept everything) to 1.0 (accept nothing)
+#   Weights range from 0.0 (ignore this signal) to 1.0 (rely only on this)
+#   Durations are in seconds unless noted
+# =============================================================================
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PATHS
+# ─────────────────────────────────────────────────────────────────────────────
+paths:
+  # Input video file to process
+  input_video: "data/input/sample_hindi.mp4"
+
+  # Where extracted audio and frames are saved
+  extracted_dir: "data/extracted"
+
+  # Where the final SRT file is written
+  output_srt: "data/output/output.srt"
+
+  # PANNs model checkpoint (.pth file)
+  panns_checkpoint: "models/panns/Cnn14_mAP=0.431.pth"
+
+  # AudioSet class labels CSV
+  panns_labels_csv: "models/panns/audioset_labels.csv"
+
+  # MediaPipe face landmark model
+  face_landmarker_model: "models/mediapipe/face_landmarker.task"
+
+  # MediaPipe pose landmark model
+  pose_landmarker_model: "models/mediapipe/pose_landmarker.task"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PHASE 2: Video Ingestion
+# ─────────────────────────────────────────────────────────────────────────────
+ingestion:
+  # Frames per second to extract from the video.
+  # 1.0 = one frame per second (fast, low storage)
+  # 5.0 = five frames per second (better reaction detection, more storage)
+  extraction_fps: 1.0
+
+  # Audio sample rate for extraction (Hz)
+  # Always 16000 — do not change unless you know why
+  audio_sample_rate: 16000
+
+  # Whether to re-extract if output files already exist
+  # false = skip extraction if files present (faster re-runs)
+  # true  = always re-extract (use after changing extraction_fps)
+  overwrite: false
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PHASE 3: Audio Pre-Processing
+# ─────────────────────────────────────────────────────────────────────────────
+audio_processor:
+  # Hop size between PANNs analysis windows (seconds)
+  # 1.0 = 50% overlap with 2s window (recommended)
+  # 0.5 = 75% overlap (finer resolution, 2x more windows to process)
+  hop_duration: 1.0
+
+  # Whether to normalize audio amplitude before analysis
+  normalize: true
+
+  # Normalization method: "peak" or "rms"
+  # peak: divide by maximum amplitude (simple, fast)
+  # rms:  divide by average energy (more robust for variable-volume content)
+  normalization_method: "peak"
+
+  # Whether to compute the full log-mel spectrogram (for visualization)
+  # false = skip (faster, saves memory)
+  # true  = compute (useful for debugging)
+  compute_spectrogram: false
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PHASE 4: Sound Event Detection (PANNs)
+# ─────────────────────────────────────────────────────────────────────────────
+sound_detector:
+  # Device for PyTorch inference: "cpu" or "cuda"
+  # Use "cuda" only if you have a compatible NVIDIA GPU with CUDA installed
+  device: "cpu"
+
+  # Number of audio windows to process simultaneously
+  # Reduce to 8 if you run out of RAM on long videos
+  batch_size: 16
+
+  # Number of top predictions to return per window
+  # 3 = top-3 classes per window (recommended)
+  top_k: 3
+
+  # Whether to filter out windows where the top prediction is speech
+  # true  = skip speech windows (recommended — speech has subtitle tracks)
+  # false = include speech (useful for debugging only)
+  filter_speech: true
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PHASE 5: Audio Event Filtering
+# ─────────────────────────────────────────────────────────────────────────────
+event_filter:
+  # Minimum confidence for HIGH_VALUE events (gunshots, dog barks, alarms)
+  # Lower = more sensitive, more events pass, more potential false positives
+  # Higher = more selective, fewer events, fewer false positives
+  high_value_threshold: 0.40
+
+  # Minimum confidence for MEDIUM_VALUE events (vehicles, mechanisms)
+  medium_value_threshold: 0.55
+
+  # Maximum gap between same-label events to merge them (seconds)
+  # Events within this gap are considered one continuous event
+  merge_gap_seconds: 2.0
+
+  # Whether to suppress sustained music and only keep music onsets
+  # true  = only annotate when music STARTS (recommended)
+  # false = annotate all music detections (produces many annotations)
+  suppress_sustained_music: true
+
+  # Minimum confidence to count as "music present" during onset detection
+  music_onset_threshold: 0.60
+
+  # Maximum confidence to count as "no music" (silence before onset)
+  music_silence_threshold: 0.25
+
+  # Minimum silence gap (seconds) before counting next music as a new onset
+  # Prevents re-triggering on brief dips in continuous music
+  min_music_silence_gap: 5.0
+
+  # Additional labels to always suppress (beyond built-in suppress list)
+  # Add AudioSet display_name strings here to suppress specific sounds
+  extra_suppress_labels: []
+  #   - "Typing"
+  #   - "Clock"
+
+  # Additional high-value labels (beyond built-in high-value list)
+  extra_high_value_labels: []
+  #   - "Tabla music"
+  #   - "Dhol"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PHASE 6: Frame Extraction
+# ─────────────────────────────────────────────────────────────────────────────
+frame_extractor:
+  # Seconds to look BEFORE the audio event timestamp
+  # Captures anticipatory reactions
+  pre_window_seconds: 1.0
+
+  # Seconds to look AFTER the audio event timestamp
+  # Captures delayed reactions (human reaction time ~200-500ms)
+  post_window_seconds: 2.0
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PHASE 7: Face Expression Analysis
+# ─────────────────────────────────────────────────────────────────────────────
+face_analyzer:
+  # Maximum faces to detect per frame
+  # 1 = single-person scenes, 2 = dialogue scenes
+  max_faces: 2
+
+  # Minimum confidence for face detection (0.0-1.0)
+  # Lower = detects more faces, including uncertain ones
+  min_detection_confidence: 0.5
+
+  # Weight of eye-opening change in face reaction score
+  ear_weight: 0.4
+
+  # Weight of eyebrow raise in face reaction score
+  brow_weight: 0.35
+
+  # Weight of mouth-opening change in face reaction score
+  mar_weight: 0.25
+
+  # Sensitivity multiplier for expression deltas
+  # Higher = more sensitive (smaller expressions trigger higher scores)
+  reaction_sensitivity: 2.0
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PHASE 8: Body Pose Analysis
+# ─────────────────────────────────────────────────────────────────────────────
+pose_analyzer:
+  # Minimum confidence for pose detection
+  min_detection_confidence: 0.5
+
+  # Weight of head movement in pose reaction score
+  head_weight: 0.45
+
+  # Weight of shoulder raise in pose reaction score
+  shoulder_weight: 0.35
+
+  # Weight of torso lean change in pose reaction score
+  lean_weight: 0.20
+
+  # Sensitivity multiplier for body movement deltas
+  # Higher than face_analyzer (3.0 vs 2.0) because body movements
+  # in normalized coordinates are smaller numbers
+  reaction_sensitivity: 3.0
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PHASE 9: Visual Confidence Scoring
+# ─────────────────────────────────────────────────────────────────────────────
+visual_scorer:
+  # Weight of face reaction score in visual_confidence
+  # face + pose weights should conceptually sum to 1.0
+  face_weight: 0.6
+
+  # Weight of pose reaction score in visual_confidence
+  pose_weight: 0.4
+
+  # Confidence discount when only one of face/pose was detected
+  # 0.9 = 10% discount for single-signal events
+  single_signal_discount: 0.9
+
+  # Maximum time gap (seconds) to consider two events as duplicates
+  duplicate_time_threshold: 1.0
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PHASE 10: CC Decision Engine
+# ─────────────────────────────────────────────────────────────────────────────
+decision_engine:
+  # Weight of audio_confidence in the final cc_score
+  audio_weight: 0.65
+
+  # Weight of visual_confidence in the final cc_score
+  visual_weight: 0.35
+
+  # Base threshold for CC acceptance
+  # Events with cc_score >= cc_threshold are accepted
+  # MOST IMPACTFUL PARAMETER — tune this first
+  # Lower = more CCs generated (risk: over-captioning)
+  # Higher = fewer CCs generated (risk: under-captioning)
+  cc_threshold: 0.60
+
+  # Threshold adjustments per event type (added to cc_threshold)
+  # Negative = easier to pass, Positive = harder to pass
+  high_value_threshold_delta: -0.05 # gunshots, dog barks: easier
+  music_onset_threshold_delta: -0.10 # music starts: easiest
+  medium_value_threshold_delta: 0.00 # vehicles, mechanisms: standard
+  unknown_threshold_delta: 0.05 # unknown labels: harder
+
+  # Small score boost for HIGH_VALUE events above min audio confidence
+  # Helps ensure narratively important sounds are not missed
+  high_value_boost: 0.05
+  high_value_boost_min_audio: 0.45
+
+  # Fraction by which to reduce visual weight when no face/pose detected
+  # 0.5 = use half the visual weight, give remainder to audio
+  neutral_visual_weight_reduction: 0.5
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PHASE 11: CC Label Generation
+# ─────────────────────────────────────────────────────────────────────────────
+label_generator:
+  # Custom label mappings to ADD to the built-in label map
+  # Format: "AudioSet display_name": "[CC Text]"
+  # These override built-in mappings if the same key exists
+  custom_labels: {}
+  #   "Tabla music": "[Tabla Playing]"
+  #   "Dhol": "[Dhol Drumming]"
+  #   "Shehnai": "[Shehnai Music]"
+
+  # Custom context overrides
+  # Format: ["AudioSet label", "filter_reason"]: "[CC Text]"
+  # (Note: YAML does not support tuple keys — use list format here,
+  #  config_loader converts to tuple internally)
+  custom_context_overrides: {}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PHASE 12: SRT Output
+# ─────────────────────────────────────────────────────────────────────────────
+srt_writer:
+  # Minimum time a CC label stays on screen (seconds)
+  # DCMP standard recommends 1.5s minimum
+  min_display_duration: 2.0
+
+  # Maximum time a CC label stays on screen (seconds)
+  max_display_duration: 5.0
+
+  # File encoding (always utf-8 for Unicode support)
+  encoding: "utf-8"
+
+  # Write UTF-8 BOM (Byte Order Mark) at file start
+  # true  = better compatibility with some Windows tools
+  # false = standard UTF-8 (recommended for most use cases)
+  write_bom: false
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PRESET PROFILES
+# ─────────────────────────────────────────────────────────────────────────────
+# Quick tuning presets. Set active_profile to use a preset.
+# Preset values OVERRIDE the individual settings above.
+# Set active_profile to null to use individual settings above.
+#
+# Available profiles:
+#   null         = use individual settings above (default)
+#   "aggressive" = more CCs, lower thresholds (children's content)
+#   "conservative" = fewer CCs, higher thresholds (feature films)
+#   "music_video" = suppress music events, focus on impacts
+
+active_profile: null
+
+profiles:
+  aggressive:
+    cc_threshold: 0.52
+    high_value_threshold: 0.35
+    medium_value_threshold: 0.48
+    high_value_boost: 0.08
+    suppress_sustained_music: true
+
+  conservative:
+    cc_threshold: 0.68
+    high_value_threshold: 0.50
+    medium_value_threshold: 0.62
+    high_value_boost: 0.03
+    suppress_sustained_music: true
+
+  music_video:
+    cc_threshold: 0.65
+    suppress_sustained_music: false
+    extra_suppress_labels:
+      - "Music"
+      - "Music of Bollywood"
+      - "Singing"
