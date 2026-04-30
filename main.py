@@ -251,6 +251,7 @@ def run_pipeline(args: argparse.Namespace) -> int:
     from src.decision_engine import CCDecisionEngine
     from src.label_generator import LabelGenerator
     from src.srt_writer import SRTWriter
+    from src.cache import save_detection_cache, load_detection_cache
 
     logger = logging.getLogger("main")
 
@@ -345,15 +346,30 @@ def run_pipeline(args: argparse.Namespace) -> int:
         )
         processed_audio = processor.process(extraction.audio_path)
 
-        detector = SoundDetector(
-            checkpoint_path=config.paths.panns_checkpoint,
-            labels_csv_path=config.paths.panns_labels_csv,
-            device=config.sound_detector.device,
-            batch_size=config.sound_detector.batch_size,
-            top_k=config.sound_detector.top_k,
-            filter_speech=config.sound_detector.filter_speech
+        # Try cache first — PANNs inference is expensive (~minutes on CPU)
+        detection_result = load_detection_cache(
+            extraction.audio_path,
+            cache_dir=config.paths.extracted_dir
         )
-        detection_result = detector.detect(processed_audio)
+        if detection_result is None:
+            # Cache miss — run PANNs inference
+            detector = SoundDetector(
+                checkpoint_path=config.paths.panns_checkpoint,
+                labels_csv_path=config.paths.panns_labels_csv,
+                device=config.sound_detector.device,
+                batch_size=config.sound_detector.batch_size,
+                top_k=config.sound_detector.top_k,
+                filter_speech=config.sound_detector.filter_speech
+            )
+            detection_result = detector.detect(processed_audio)
+            # Save to cache for next run
+            save_detection_cache(
+                extraction.audio_path,
+                detection_result,
+                cache_dir=config.paths.extracted_dir
+            )
+        else:
+            logger.info("Using cached PANNs results — skipping inference")
 
         progress.end_phase(
             "Audio Analysis",
